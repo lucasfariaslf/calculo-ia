@@ -1,0 +1,1226 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>
+<title>Cálculo por trás da IA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+:root {
+  --ground: #f6f7f9;
+  --surface: #ffffff;
+  --ink: #18202b;
+  --muted: #5d6673;
+  --rule: #dde1e7;
+  --blue: #1f4e79;
+  --orange: #c0531a;
+  --faint: #c9d0da;
+  --good: #2e7d4f;
+  --bad: #b3261e;
+  --math: #7a5600;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #12161c; --surface: #1a2029; --ink: #e6e9ee; --muted: #9aa3b0;
+    --rule: #2c3440; --blue: #7fb0e0; --orange: #f08a4b; --faint: #3a4452;
+    --good: #6cc494; --bad: #f2877f; --math: #ffd866;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #12161c; --surface: #1a2029; --ink: #e6e9ee; --muted: #9aa3b0;
+  --rule: #2c3440; --blue: #7fb0e0; --orange: #f08a4b; --faint: #3a4452;
+  --good: #6cc494; --bad: #f2877f; --math: #ffd866;
+}
+* { box-sizing: border-box; }
+/* 1rem is about 28px at 1280x720 and 42px at 1920x1080. Everything is sized in rem,
+   so a slide behaves like a fixed 16:9 stage of about 45.5rem x 25.6rem. */
+html { height: 100%; font-size: min(2.2vw, 3.9vh); }
+body {
+  height: 100%; margin: 0; overflow: hidden;
+  background: var(--ground); color: var(--ink);
+  font: 1rem/1.4 var(--sans);
+}
+p { margin: 0; }
+/* In this deck <i> marks a math variable: always italic serif, like the MathML variables. */
+i { font-style: italic; font-family: var(--serif); }
+/* Formulas and variables get their own colour so they stand apart from running text. */
+/* Only formulas that sit inside running text are coloured. Formulas shown on their own line keep the text colour. */
+i, math, .m { color: var(--math); }
+.ml i, .ml math, .ml .m, .demo .eq i, .demo .eq .m, .upd-r i { color: inherit; }
+.ml.mix { color: var(--math); }
+.tx { color: var(--ink); }
+.c-eta i, .c-der i, .c-eta math, .c-der math, button i, .verdict i { color: inherit; }
+.deck { height: 100%; position: relative; }
+.slide {
+  display: none; height: 100%; flex-direction: column; gap: .7rem;
+  padding: 1.2rem 2.2rem 2rem; overflow: hidden;
+}
+.slide.active { display: flex; }
+.eyebrow { font: 500 .55rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 600 2.3rem/1.12 var(--serif); margin: 0; text-wrap: balance; max-width: 22ch; }
+h2 { font: 600 1.6rem/1.15 var(--serif); margin: 0; text-wrap: balance; }
+.lead { color: var(--muted); }
+.small { font-size: .78rem; color: var(--muted); }
+.fill { flex: 1; min-height: 0; }
+.cols { display: grid; gap: 1.4rem; align-items: center; }
+.cols > * { min-width: 0; }
+.stack { display: grid; gap: .8rem; align-content: start; min-width: 0; }
+.stack.center { align-content: center; }
+
+/* Math: native MathML for fractions and sums, plain HTML elsewhere, all in the serif face. */
+.m { font-family: var(--serif); }
+math { font-family: var(--serif); font-size: 1.12em; math-style: normal; }
+math, math * { text-transform: none; }
+math mi { font-style: italic; }
+math mi.up { font-style: normal; }
+/* The text serif has no ∑ and no OpenType MATH table, and WebKit drew no ∑ at all. The sum takes a math
+   font (macOS, Windows, then the generic), and largeop="false" with 1.5em gives one size in both engines. */
+math mo.sum { font-family: "STIX Two Math", "Cambria Math", "Latin Modern Math", math; font-size: 1.5em; }
+math mfrac { padding-inline: .1em; }
+.ml { font: 1.2rem/1.5 var(--serif); }
+.ml.big { font-size: 1.45rem; }
+.hl {
+  padding: .45rem .8rem; border-left: 3px solid var(--orange);
+  background: color-mix(in srgb, var(--orange) 9%, transparent); border-radius: 2px;
+}
+.box {
+  padding: .45rem .8rem; border-left: 3px solid var(--blue);
+  background: color-mix(in srgb, var(--blue) 7%, transparent); border-radius: 2px;
+}
+.ann { font: .72rem/1.3 var(--sans); color: var(--muted); }
+.lines { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1.4rem; align-items: baseline; }
+
+/* Step reveals keep their layout space. */
+.slide [data-step] { visibility: hidden; opacity: 0; transition: opacity .25s, visibility 0s linear .25s; }
+.slide [data-step].on { visibility: visible; opacity: 1; transition: opacity .25s; }
+@media (prefers-reduced-motion: reduce) { .slide [data-step], .slide [data-step].on { transition: none; } }
+
+/* Slide 1 */
+.title { justify-content: center; gap: 1.2rem; }
+.title .who { font-size: 1rem; }
+.title .where { font-size: .8rem; color: var(--muted); }
+
+/* Slide 2 */
+.road { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
+.road li { font-size: 1rem; }
+.road .c { color: var(--muted); }
+
+/* Tables and bars */
+table.t { border-collapse: collapse; font-size: .78rem; }
+table.t th, table.t td { padding: .25rem .7rem; border-bottom: 1px solid var(--rule); text-align: left; }
+table.t th { font-weight: 500; color: var(--muted); }
+table.t th.m, table.t th .m { color: var(--math); }
+table.t td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.bigbars { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr) max-content; gap: .45rem .8rem; align-items: center; font-size: .8rem; }
+.bigbars .w { font-family: var(--serif); font-size: .9rem; }
+.bigbars .z, .bigbars .v { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.track { height: .6rem; border-radius: 2px; background: color-mix(in srgb, var(--faint) 45%, transparent); }
+.track span { display: block; height: 100%; border-radius: 2px; background: var(--blue); }
+.track.score span { background: var(--muted); }
+.prompt { font: 1.5rem/1.3 var(--serif); }
+.prompt .gap { display: inline-block; width: 3.5em; border-bottom: 2px solid var(--orange); }
+
+/* Slide 15 */
+.take { display: grid; grid-template-columns: max-content 1fr; gap: .7rem 1.2rem; align-items: baseline; }
+.take .k { font: 600 1.15rem var(--serif); }
+.take .v { font-size: .8rem; color: var(--muted); }
+
+/* Canvases */
+canvas { display: block; width: 100%; height: auto; max-width: 100%; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; }
+canvas.drag { touch-action: none; cursor: crosshair; }
+
+/* Live demos */
+.demo { font-size: .64rem; line-height: 1.4; display: grid; gap: 1rem; align-items: start; }
+.demo .side, .demo .main { display: grid; gap: .55rem; min-width: 0; align-content: start; }
+.demo .eq { font: .78rem/1.55 var(--serif); padding: .3rem .6rem; border-left: 2px solid var(--blue); background: color-mix(in srgb, var(--blue) 6%, transparent); }
+.ctrl { display: grid; gap: .15rem; }
+.ctrl label { color: var(--muted); display: flex; justify-content: space-between; gap: .4rem; }
+.ctrl output, .numv { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+input[type="range"] { width: 100%; margin: 0; accent-color: var(--blue); }
+input[type="text"], select, textarea {
+  font: 500 .64rem var(--mono); padding: .2rem .35rem; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--ground); color: var(--ink); width: 100%;
+}
+textarea { font: .56rem/1.45 var(--sans); resize: none; height: 2.4rem; }
+.check { display: flex; align-items: center; gap: .35rem; cursor: pointer; width: fit-content; }
+.check input { width: .6rem; height: .6rem; margin: 0; accent-color: var(--blue); }
+.row { display: flex; gap: .35rem; flex-wrap: wrap; }
+button {
+  font: 500 .64rem var(--sans); padding: .22rem .6rem; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--blue); background: var(--blue); color: var(--surface);
+}
+button.ghost { background: transparent; color: var(--blue); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, canvas:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+.readout { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .1rem .6rem; margin: 0; }
+.readout dt { color: var(--muted); }
+.readout dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* Slide 6: the next gradient step with its numbers. Fixed-width cells keep the digits still between steps. */
+.upd { display: grid; gap: .05rem; }
+.upd .numv { display: inline-block; min-width: 3ch; text-align: right; }
+.upd-g {
+  display: grid; grid-template-columns: max-content 6ch max-content 4ch max-content 8ch max-content 6ch;
+  gap: .05rem .2em; align-items: baseline; font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+.upd-g > * { text-align: right; white-space: nowrap; }
+.upd-g .upd-r { font-family: var(--serif); text-align: left; }
+.upd-g .o { color: var(--muted); }
+.upd-g b { font-weight: 500; }
+.c-eta { color: var(--blue); }
+.c-der { color: var(--orange); }
+.verdict { font-weight: 600; font-size: .78rem; width: fit-content; }
+.verdict.ok { color: var(--good); }
+.verdict.warn { color: var(--orange); }
+.verdict.no { color: var(--bad); }
+.note { color: var(--muted); }
+.sentence {
+  font: .8rem/1.55 var(--serif); height: 5.6em; overflow-y: auto; padding: .35rem .55rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); overflow-wrap: anywhere;
+}
+.sentence .new { background: color-mix(in srgb, var(--orange) 22%, transparent); border-radius: 3px; padding: 0 3px; }
+.bars { display: grid; grid-template-columns: minmax(0, 11ch) 4ch 5ch minmax(0, 1fr) 4ch; gap: .12rem .5rem; align-items: center; font-family: var(--mono); }
+.bar-l { font-family: var(--mono); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-l span { padding: 0 2px; border-radius: 3px; }
+.bar-l.won span { background: color-mix(in srgb, var(--orange) 22%, transparent); }
+.bar-f.won { background: var(--orange); }
+.bar-n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bar-h { font: .64rem/1.2 var(--serif); color: var(--muted); text-align: right; }
+.bar-h sup { font-size: .75em; }
+.bar-s { color: var(--muted); text-align: right; }
+.bar-n.bar-s, .bar-v.bar-s { border-top: 1px solid var(--muted); }
+.bar-t { height: .5rem; border-radius: 2px; background: color-mix(in srgb, var(--faint) 45%, transparent); }
+.bar-f { display: block; height: 100%; border-radius: 2px; background: var(--blue); transition: width .25s; }
+.bar-v { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+@media (prefers-reduced-motion: reduce) { .bar-f { transition: none; } }
+
+/* Navigation */
+.nav { position: fixed; right: .7rem; bottom: .5rem; display: flex; align-items: center; gap: .35rem; font: .5rem var(--mono); color: var(--muted); z-index: 5; }
+.nav button { font: .55rem/1 var(--mono); padding: .15rem .4rem; background: transparent; color: var(--muted); border-color: var(--rule); }
+.nav button:disabled { opacity: .35; cursor: default; }
+.nav button.count { min-width: 5.2em; text-align: center; font-variant-numeric: tabular-nums; border-color: transparent; }
+.nav button.count:hover, .nav button.count[aria-expanded="true"] { border-color: var(--rule); }
+.nav-menu {
+  position: absolute; right: 0; bottom: calc(100% + .3rem); margin: 0; padding: .25rem 0; list-style: none;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; max-height: 80vh; overflow-y: auto;
+}
+.nav-menu[hidden] { display: none; }
+.nav-menu button {
+  display: block; width: 100%; text-align: left; white-space: nowrap; border: 0; border-radius: 0;
+  padding: .2rem .7rem; font: .55rem/1.3 var(--mono); color: var(--muted); background: transparent;
+}
+.nav-menu button:hover { background: var(--ground); color: var(--ink); }
+.nav-menu button[aria-current="true"] { color: var(--ink); font-weight: 500; }
+
+/* Phone width: slides scroll vertically, never sideways. */
+@media (max-width: 760px) {
+  html { font-size: 16px; }
+  .slide { overflow-y: auto; overflow-x: hidden; padding: 20px 16px 64px; }
+  .cols, .demo { grid-template-columns: 1fr !important; }
+  h1 { font-size: 1.9rem; }
+  h2 { font-size: 1.45rem; }
+  .ml { font-size: 1.05rem; }
+  .ml.big { font-size: 1.2rem; }
+  .lines { grid-template-columns: 1fr; gap: .2rem; }
+  .lines .ann { margin-bottom: .5rem; }
+  .take { grid-template-columns: 1fr; gap: .2rem; }
+  .take .v { margin-bottom: .6rem; }
+  .demo { font-size: .85rem; }
+  .demo .eq { font-size: .95rem; }
+  input[type="text"], select, button { font-size: .85rem; }
+  textarea { font-size: .8rem; height: 6rem; }
+  .sentence { font-size: 1rem; }
+  .prompt { font-size: 1.25rem; }
+  canvas { width: 100% !important; }
+  .nav { left: 0; right: 0; bottom: 0; justify-content: flex-end; padding: 8px 12px; background: var(--ground); border-top: 1px solid var(--rule); font-size: 13px; }
+  .nav button { font-size: 14px; padding: 4px 10px; }
+  .wide-only { display: none; }
+}
+</style>
+
+<div class="deck" id="deck">
+
+<!-- 1 -->
+<section class="slide title" aria-label="Slide 1">
+  <h1>O cálculo por trás do ChatGPT e dos geradores de imagens</h1>
+  <p class="who">Lucas Lima · Engenheiro de inteligência artificial</p>
+  <p class="where">Fundação Dom Cabral · Economia · 13 de novembro de 2026</p>
+</section>
+
+<!-- 2 -->
+<section class="slide" aria-label="Slide 2">
+  <h2>Onde o cálculo aparece</h2>
+  <div class="stack fill center" style="gap:1rem">
+  <p class="lead">ChatGPT, autocompletar do celular, geradores de imagens.</p>
+  <p data-step="1" style="font-size:1.1rem">Por trás dessas ferramentas há cálculo. Três exemplos:</p>
+  <ol class="road" data-step="2">
+    <li>1. Como uma máquina aprende <span class="c">· derivadas parciais e equações em diferenças</span></li>
+    <li>2. Como o ChatGPT escreve <span class="c">· funções de várias variáveis</span></li>
+    <li>3. Como a IA desenha <span class="c">· equações diferenciais</span></li>
+  </ol>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" aria-label="Slide 3">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>Prever o preço de um apartamento pelo tamanho</h2>
+  <div class="cols fill" style="grid-template-columns: minmax(0, 1fr) 19rem">
+    <div class="stack">
+      <p>Temos 8 apartamentos: tamanho e preço.</p>
+      <p class="ml big box">preço ≈ <i>a</i> + <i>b</i> · tamanho</p>
+      <p>O computador precisa encontrar <i>a</i> e <i>b</i>.</p>
+      <p class="small">É a reta de regressão (mínimos quadrados), usada em estatística e econometria. Vamos ver como a máquina chega nela.</p>
+    </div>
+    <canvas id="s3" width="480" height="320" role="img" aria-label="Oito apartamentos, tamanho contra preço, com a reta de regressão"></canvas>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" aria-label="Slide 4">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>O erro é uma função de duas variáveis</h2>
+  <div class="cols fill" style="grid-template-columns: minmax(0, 1fr) 20rem">
+    <div class="stack">
+      <p class="ml big">
+        <math display="block"><mi>E</mi><mo stretchy="false">(</mo><mi>a</mi><mo>,</mo><mi>b</mi><mo stretchy="false">)</mo><mo>=</mo><mfrac><mn>1</mn><mi>n</mi></mfrac><munderover><mo class="sum" largeop="false">∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msup><mrow><mo stretchy="false">(</mo><mi>a</mi><mo>+</mo><mi>b</mi><mo>·</mo><msub><mi>x</mi><mi>i</mi></msub><mo>−</mo><msub><mi>y</mi><mi>i</mi></msub><mo stretchy="false">)</mo></mrow><mn>2</mn></msup></math>
+      </p>
+      <p class="small">Para cada apartamento <i>i</i>: <i>x<sub>i</sub></i> é o tamanho e <i>y<sub>i</sub></i> o preço.</p>
+      <p data-step="1">Cada par <span class="m">(<i>a</i>, <i>b</i>)</span> é uma reta, e <i>E</i> diz o quanto ela erra.</p>
+      <p data-step="2"><i>E</i> tem um único ponto de mínimo, que é a melhor reta. As curvas de nível são elipses em volta dele.</p>
+    </div>
+    <canvas id="s4" width="640" height="400" data-step="2" role="img" aria-label="Curvas de nível do erro E(a, b) com o ponto de mínimo marcado"></canvas>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" aria-label="Slide 5">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>Como diminuir o erro</h2>
+  <div class="stack fill center" style="gap:1rem">
+    <p data-step="1">As derivadas parciais
+      <math><mfrac><mrow><mi class="up">∂</mi><mi>E</mi></mrow><mrow><mi class="up">∂</mi><mi>a</mi></mrow></mfrac></math> e
+      <math><mfrac><mrow><mi class="up">∂</mi><mi>E</mi></mrow><mrow><mi class="up">∂</mi><mi>b</mi></mrow></mfrac></math>
+      dizem para que lado o erro sobe.</p>
+    <div data-step="2" class="stack" style="gap:.4rem">
+      <p>Então andamos um pouco no sentido contrário:</p>
+      <p class="ml big box">
+        <math><mi>a</mi><mo stretchy="false">←</mo><mi>a</mi><mo>−</mo><mi class="up">η</mi><mfrac><mrow><mi class="up">∂</mi><mi>E</mi></mrow><mrow><mi class="up">∂</mi><mi>a</mi></mrow></mfrac></math>
+        &nbsp;&nbsp;&nbsp;&nbsp;
+        <math><mi>b</mi><mo stretchy="false">←</mo><mi>b</mi><mo>−</mo><mi class="up">η</mi><mfrac><mrow><mi class="up">∂</mi><mi>E</mi></mrow><mrow><mi class="up">∂</mi><mi>b</mi></mrow></mfrac></math>
+      </p>
+      <p>Em forma de vetor: <span class="m">(<i>a</i>, <i>b</i>) ← (<i>a</i>, <i>b</i>) − η∇<i>E</i></span>, com o gradiente <span class="m">∇<i>E</i> = (∂<i>E</i>/∂<i>a</i>, ∂<i>E</i>/∂<i>b</i>)</span>. Ele aponta para onde <i>E</i> cresce mais rápido, então o passo vai no sentido oposto.</p>
+    </div>
+    <p data-step="3"><span class="m">η</span> é o tamanho do passo, chamado <b>taxa de aprendizado</b>.</p>
+    <p data-step="4">Repetir muitas vezes. Isso se chama <b>gradiente descendente</b>.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" aria-label="Slide 6">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>Demonstração 1: ajustando a reta</h2>
+  <p class="lead" style="font-size:.85rem">O efeito de mudar <span class="m">η</span>.</p>
+  <div class="demo fill" style="grid-template-columns: 24rem minmax(0, 1fr)">
+    <div class="main">
+      <canvas id="gd-c" class="drag" width="640" height="400" role="img" aria-label="Curvas de nível do erro E(a, b) com o caminho do gradiente descendente"></canvas>
+      <p class="note">Arraste para escolher o ponto de partida. A cruz marca o mínimo de <i>E</i>.
+        Na demo os dados estão em escala ajustada: <span class="m"><i>x</i> = (tamanho − 60)/50</span>, <span class="m"><i>y</i> = preço/100</span>. Os limites de <span class="m">η</span> valem para essa escala.</p>
+    </div>
+    <div class="side" style="gap:.4rem">
+      <canvas id="gd-s" width="360" height="172" role="img" aria-label="Oito apartamentos, tamanho contra preço, com a reta atual"></canvas>
+      <div class="ctrl">
+        <label for="gd-eta"><span>taxa de aprendizado <span class="m">η</span></span> <output id="gd-eta-o" for="gd-eta">0,30</output></label>
+        <input id="gd-eta" type="range" min="0.05" max="1" step="0.01" value="0.30">
+        <p id="gd-th" class="note">–</p>
+      </div>
+      <div class="row">
+        <button id="gd-step">Passo</button>
+        <button id="gd-run">30 passos</button>
+        <button id="gd-reset" class="ghost">Reiniciar</button>
+      </div>
+      <div class="upd" aria-label="A conta do próximo passo">
+        <p>passos <span id="gd-k" class="numv">0</span> · erro <i>E</i> = <span id="gd-e" class="numv">–</span></p>
+        <div class="upd-g">
+          <span class="upd-r"><i>a</i> ← <i>a</i> − <span class="c-eta">η</span> <span class="c-der">∂<i>E</i>/∂<i>a</i></span></span>
+          <span id="gd-a0">–</span><span class="o">−</span><span id="gd-ea" class="c-eta">–</span><span class="o">×</span><span id="gd-ga" class="c-der">–</span><span class="o">=</span><b id="gd-a1">–</b>
+          <span class="upd-r"><i>b</i> ← <i>b</i> − <span class="c-eta">η</span> <span class="c-der">∂<i>E</i>/∂<i>b</i></span></span>
+          <span id="gd-b0">–</span><span class="o">−</span><span id="gd-eb" class="c-eta">–</span><span class="o">×</span><span id="gd-gb" class="c-der">–</span><span class="o">=</span><b id="gd-b1">–</b>
+        </div>
+      </div>
+      <p id="gd-v" class="verdict" aria-live="polite">–</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" aria-label="Slide 7">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>O caso de uma variável</h2>
+  <div class="stack fill center" style="gap:1rem">
+    <div class="lines">
+      <p class="ml big"><i>E</i>(<i>w</i>) = (<i>w</i> − 3)<sup>2</sup></p>
+      <p class="ann">o melhor valor é <span class="m"><i>w</i> = 3</span></p>
+      <p class="ml big" data-step="1"><i>E</i>′(<i>w</i>) = 2(<i>w</i> − 3)</p>
+      <p class="ann" data-step="1">a derivada</p>
+      <p class="ml big" data-step="2"><i>w</i><sub><i>t</i>+1</sub> = <i>w<sub>t</sub></i> − η · 2(<i>w<sub>t</sub></i> − 3)</p>
+      <p class="ann" data-step="2">um passo do gradiente descendente</p>
+      <p class="ml big" data-step="3"><i>w</i><sub><i>t</i>+1</sub> = (1 − 2η) <i>w<sub>t</sub></i> + 6η</p>
+      <p class="ann" data-step="3">abrindo os parênteses</p>
+    </div>
+    <p class="hl" data-step="4">É uma equação em diferenças <span class="m"><i>w</i><sub><i>t</i>+1</sub> = <i>c</i> · <i>w<sub>t</sub></i> + <i>d</i></span>, com <span class="m"><i>c</i> = 1 − 2η</span> e <span class="m"><i>d</i> = 6η</span>.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" aria-label="Slide 8">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>Quando o aprendizado converge</h2>
+  <div class="cols fill" style="grid-template-columns: minmax(0, 1fr) 19rem">
+    <div class="stack" style="gap:.6rem">
+      <p class="ml mix" data-step="1"><span class="tx">Equilíbrio:</span>&nbsp;
+        <math><msup><mi>w</mi><mo lspace="0" rspace="0">∗</mo></msup><mo>=</mo><mfrac><mi>d</mi><mrow><mn>1</mn><mo>−</mo><mi>c</mi></mrow></mfrac><mo>=</mo><mfrac><mrow><mn>6</mn><mi class="up">η</mi></mrow><mrow><mn>2</mn><mi class="up">η</mi></mrow></mfrac><mo>=</mo><mn>3</mn></math></p>
+      <p class="ml mix" data-step="2"><span class="tx">Solução:</span>&nbsp; <i>w<sub>t</sub></i> = 3 + (1 − 2η)<sup><i>t</i></sup> (<i>w</i><sub>0</sub> − 3)</p>
+      <p class="ml mix" data-step="3"><span class="tx">Converge se</span> |1 − 2η| &lt; 1,<br><span class="tx">ou seja,</span> 0 &lt; η &lt; 1.</p>
+      <table class="t" data-step="4">
+        <thead><tr><th class="m">η</th><th><span class="m"><i>c</i> = 1 − 2η</span></th><th>com <span class="m"><i>w</i><sub>0</sub> = 0</span></th></tr></thead>
+        <tbody>
+          <tr><td class="num">0,3</td><td class="num">0,4</td><td>converge sem oscilar</td></tr>
+          <tr><td class="num">0,8</td><td class="num">−0,6</td><td>oscila e converge</td></tr>
+          <tr><td class="num">1,1</td><td class="num">−1,2</td><td style="color:var(--orange)">diverge</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <canvas id="s8" width="460" height="360" data-step="4" role="img" aria-label="w_t para t de 0 a 8 com eta 0,3, 0,8 e 1,1, e a reta alvo w = 3"></canvas>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" aria-label="Slide 9">
+  <span class="eyebrow">Parte 1 · Como uma máquina aprende</span>
+  <h2>A mesma ideia no ChatGPT</h2>
+  <div class="stack fill center" style="gap:1.1rem">
+    <p data-step="1">A mesma ideia, com muito mais variáveis. O GPT-3 (2020) tem <b>175 bilhões</b> de parâmetros.</p>
+    <p data-step="2">Treinar um modelo é repetir esse passo da ordem de cem mil vezes, e cada passo ajusta todos os parâmetros de uma vez.</p>
+    <p data-step="3">Escolher <span class="m">η</span> é uma das decisões mais importantes do treinamento: grande demais e o treinamento diverge, pequeno demais e ele demora.</p>
+    <p class="hl ml" data-step="4">Treinar uma IA é minimizar uma função de muitas variáveis.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" aria-label="Slide 10">
+  <span class="eyebrow">Parte 2 · Como o ChatGPT escreve</span>
+  <h2>Uma palavra por vez</h2>
+  <div class="stack fill center" style="gap:1.1rem">
+    <p class="prompt">A capital do Brasil é <span class="gap"></span></p>
+    <p>O modelo dá uma nota <i class="m">z</i> para cada palavra possível.</p>
+    <div class="bigbars" id="s10" data-step="1" style="max-width:30rem"></div>
+    <p class="small" data-step="1">Notas ilustrativas. Na prática o modelo trabalha com tokens: palavras ou pedaços de palavras.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" aria-label="Slide 11">
+  <span class="eyebrow">Parte 2 · Como o ChatGPT escreve</span>
+  <h2>De notas a probabilidades</h2>
+  <div class="cols fill" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items:start">
+    <div class="stack" style="gap:.6rem">
+      <p class="ml big">
+        <math display="block"><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><mfrac><msup><mi>e</mi><msub><mi>z</mi><mi>i</mi></msub></msup><mrow><msup><mi>e</mi><msub><mi>z</mi><mn>1</mn></msub></msup><mo>+</mo><mi class="up">…</mi><mo>+</mo><msup><mi>e</mi><msub><mi>z</mi><mi>n</mi></msub></msup></mrow></mfrac></math>
+      </p>
+      <p data-step="1" style="font-size:.8rem">É uma função de várias variáveis: uma nota para cada token do vocabulário, 50.257 tokens (GPT-2).</p>
+      <div data-step="3" class="stack" style="gap:.3rem">
+        <p class="ml"><math><mfrac><mrow><mi class="up">∂</mi><msub><mi>p</mi><mi>i</mi></msub></mrow><mrow><mi class="up">∂</mi><msub><mi>z</mi><mi>i</mi></msub></mrow></mfrac><mo>=</mo><msub><mi>p</mi><mi>i</mi></msub><mo stretchy="false">(</mo><mn>1</mn><mo>−</mo><msub><mi>p</mi><mi>i</mi></msub><mo stretchy="false">)</mo><mo>&gt;</mo><mn>0</mn></math></p>
+        <p class="ml"><math><mfrac><mrow><mi class="up">∂</mi><msub><mi>p</mi><mi>i</mi></msub></mrow><mrow><mi class="up">∂</mi><msub><mi>z</mi><mi>j</mi></msub></mrow></mfrac><mo>=</mo><mo form="prefix">−</mo><msub><mi>p</mi><mi>i</mi></msub><msub><mi>p</mi><mi>j</mi></msub><mo>&lt;</mo><mn>0</mn></math>
+          <span class="ann">para <span class="m"><i>j</i> ≠ <i>i</i></span></span></p>
+      </div>
+    </div>
+    <div class="stack" style="gap:1rem; padding-top:.4rem">
+      <div class="bigbars" id="s11" data-step="2"></div>
+      <p class="hl" data-step="3" style="font-size:.8rem">Aumentar a nota de uma palavra aumenta a probabilidade dela e diminui a de todas as outras.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide" aria-label="Slide 12">
+  <span class="eyebrow">Parte 2 · Como o ChatGPT escreve</span>
+  <h2>Demonstração 2: sorteando a próxima palavra</h2>
+  <p class="lead" style="font-size:.8rem">Escrever é uma recursão: a palavra nova é sorteada a partir da anterior. É uma equação em diferenças com sorteio.</p>
+  <div class="demo fill" style="grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr)">
+    <div class="main">
+      <p id="ng-sentence" class="sentence" aria-live="polite"></p>
+      <p id="ng-cap" class="note">–</p>
+      <div id="ng-bars" class="bars" role="img" aria-label="Probabilidades da próxima palavra"></div>
+    </div>
+    <div class="side">
+      <div class="eq"><i>z<sub>i</sub></i> = ln contagem(palavra → <i>i</i>)<br>
+        <math><msub><mi>p</mi><mi>i</mi></msub><mo>=</mo><msup><mi>e</mi><mrow><msub><mi>z</mi><mi>i</mi></msub><mo>/</mo><mi>T</mi></mrow></msup><mo>/</mo><mo stretchy="false">(</mo><msup><mi>e</mi><mrow><msub><mi>z</mi><mn>1</mn></msub><mo>/</mo><mi>T</mi></mrow></msup><mo>+</mo><mi class="up">…</mi><mo>+</mo><msup><mi>e</mi><mrow><msub><mi>z</mi><mi>n</mi></msub><mo>/</mo><mi>T</mi></mrow></msup><mo stretchy="false">)</mo></math></div>
+      <div class="row" style="flex-wrap:nowrap; gap:.8rem">
+        <div class="ctrl" style="flex:1">
+          <label for="ng-start">Palavra inicial</label>
+          <select id="ng-start"></select>
+        </div>
+        <div class="ctrl" style="flex:1.4">
+          <label for="ng-temp"><span>temperatura <i>T</i></span> <output id="ng-temp-o" for="ng-temp">1,0</output></label>
+          <input id="ng-temp" type="range" min="0.2" max="3" step="0.1" value="1">
+        </div>
+      </div>
+      <p class="note">Com <i>T</i> baixo, o modelo quase sempre escolhe a palavra mais provável. Com <i>T</i> alto, o texto fica mais surpreendente.</p>
+      <div class="row">
+        <button id="ng-next">Próxima palavra</button>
+        <button id="ng-write">Escrever 15 palavras</button>
+        <button id="ng-restart" class="ghost">Recomeçar</button>
+      </div>
+      <div class="ctrl">
+        <label for="ng-text">Texto de treinamento do modelo de bigramas</label>
+        <textarea id="ng-text" spellcheck="false">Toda manhã os estudantes vão ao café perto da faculdade. Os estudantes tomam café e falam de cálculo. O café é forte e o cálculo é difícil. O professor diz que o cálculo é o estudo da mudança. Os estudantes dizem que o café também é o estudo da mudança. Na cidade os ônibus são lentos e as ruas são cheias. Os estudantes estudam cálculo no ônibus. Os estudantes estudam cálculo no café. O professor toma café na cidade e pensa em funções. Uma função recebe um número e devolve um número. Uma função pode crescer ou cair. Um bom café é quente. A cidade nunca fica calma, mas o café é calmo de manhã. Quando a prova chega, os estudantes tomam mais café e estudam mais cálculo. Depois da prova, os estudantes andam pela cidade.</textarea>
+      </div>
+    </div>
+  </div>
+  <p class="small" style="font-size:.7rem">O laço do ChatGPT é o mesmo: notas, probabilidades, sorteio, repetir. A diferença está nas notas: elas vêm de uma rede (o Transformer) que lê o texto que cabe na janela de contexto, não só a última palavra.</p>
+</section>
+
+<!-- 13 -->
+<section class="slide" aria-label="Slide 13">
+  <span class="eyebrow">Parte 3 · Como a IA desenha</span>
+  <h2>Uma imagem é um ponto</h2>
+  <div class="stack fill center" style="gap:.6rem">
+    <p data-step="1">Uma imagem de 512 × 512 pixels é representada por <b>786.432 números</b>, três por pixel.</p>
+    <div data-step="2" class="stack" style="gap:.3rem">
+      <p>Em geradores como o Stable Diffusion 3, gerar uma imagem é levar um ponto do ruído até uma imagem, seguindo setas:</p>
+      <p class="ml big box"><math><mfrac><mrow><mi>d</mi><mi>x</mi></mrow><mrow><mi>d</mi><mi>t</mi></mrow></mfrac><mo>=</mo><mi>v</mi><mo stretchy="false">(</mo><mi>x</mi><mo>,</mo><mi>t</mi><mo stretchy="false">)</mo></math></p>
+      <p class="small">Isso é uma equação diferencial. O <span class="m"><i>v</i>(<i>x</i>, <i>t</i>)</span> é um campo de velocidades (um campo vetorial: uma seta em cada ponto). No treinamento seguimos as setas <span class="m">−∇<i>E</i></span>. Aqui seguimos as setas <i>v</i>.</p>
+    </div>
+    <p data-step="3" class="ml mix"><math><mfrac><mrow><mi>d</mi><mi>x</mi></mrow><mrow><mi>d</mi><mi>t</mi></mrow></mfrac><mo>=</mo><mo form="prefix">−</mo><mi>k</mi><mo stretchy="false">(</mo><mi>x</mi><mo>−</mo><msup><mi>x</mi><mo lspace="0" rspace="0">∗</mo></msup><mo stretchy="false">)</mo></math>
+      <span class="tx" style="font-family:var(--sans)">&nbsp;tem solução&nbsp;</span> <i>x</i>(<i>t</i>) = <i>x</i><sup>∗</sup> + (<i>x</i><sub>0</sub> − <i>x</i><sup>∗</sup>) <i>e</i><sup>−<i>kt</i></sup></p>
+    <p data-step="4" class="small">Com passos cada vez menores, a equação em diferenças se aproxima de uma equação diferencial: <span class="m">(1 − 2η)<sup><i>τ</i>/η</sup> → <i>e</i><sup>−2<i>τ</i></sup></span> quando <span class="m">η → 0</span>.</p>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide" aria-label="Slide 14">
+  <span class="eyebrow">Parte 3 · Como a IA desenha</span>
+  <h2>Demonstração 3: de ruído a letras</h2>
+  <p class="lead" style="font-size:.8rem">O computador resolve em passos pequenos (método de Euler): <span class="m"><i>x</i><sub><i>j</i>+1</sub> = <i>x<sub>j</sub></i> + <i>h</i> · <i>v</i>(<i>x<sub>j</sub></i>, <i>t<sub>j</sub></i>)</span>. De novo uma equação em diferenças.</p>
+  <div class="demo fill" style="grid-template-columns: 20.5rem minmax(0, 1fr)">
+    <canvas id="flow-c" width="640" height="400" role="img" aria-label="Pontos indo do ruído até o texto"></canvas>
+    <div class="side">
+      <div class="ctrl">
+        <label for="flow-text">Texto alvo</label>
+        <input id="flow-text" type="text" value="CÁLCULO" maxlength="12" autocomplete="off">
+      </div>
+      <div class="ctrl">
+        <label for="flow-steps"><span>passos de Euler <i>n</i>, com <span class="m"><i>h</i> = 1/<i>n</i></span></span> <output id="flow-steps-o" for="flow-steps">60</output></label>
+        <input id="flow-steps" type="range" min="1" max="120" value="60">
+      </div>
+      <label class="check" for="flow-arrows"><input id="flow-arrows" type="checkbox"> <span>Mostrar setas: o campo de velocidades <span class="m"><i>v</i>(<i>x</i>, <i>t</i>)</span></span></label>
+      <div class="row">
+        <button id="flow-run">Gerar</button>
+        <button id="flow-reset" class="ghost">Novo ruído</button>
+      </div>
+      <dl class="readout">
+        <dt>tempo <i>t</i></dt><dd id="flow-t">0,00</dd>
+        <dt>pontos</dt><dd id="flow-n">–</dd>
+      </dl>
+      <p class="note">Nesta demo, com poucos passos o resultado sai deformado. Com <span class="m"><i>n</i> = 1</span>, todos os pontos vão para a posição média do texto.</p>
+    </div>
+  </div>
+  <p class="small" style="font-size:.7rem">É uma analogia em duas dimensões: cada ponto tem 2 coordenadas, uma imagem tem 786.432. Aqui as setas vêm do texto. Num gerador de imagens de verdade, uma rede aprende as setas a partir de centenas de milhões de imagens.</p>
+</section>
+
+<!-- 15 -->
+<section class="slide" aria-label="Slide 15">
+  <h2>Resumo</h2>
+  <div class="stack fill center" style="gap:1.1rem">
+    <div class="take">
+      <p class="k" data-step="1">Treinar</p>
+      <p class="v" data-step="1">minimizar uma função de várias variáveis seguindo o gradiente, passo a passo. Cada passo é uma equação em diferenças.</p>
+      <p class="k" data-step="2">Escrever</p>
+      <p class="v" data-step="2">calcular probabilidades com o softmax, uma função de várias variáveis, e sortear a próxima palavra. Repetir.</p>
+      <p class="k" data-step="3">Desenhar</p>
+      <p class="v" data-step="3">seguir as setas de uma equação diferencial, em passos do método de Euler.</p>
+    </div>
+    <p class="hl ml" data-step="4">Derivadas parciais, equações em diferenças e equações diferenciais: as três estão dentro dessas ferramentas.</p>
+    <p data-step="5" style="font: 600 1.5rem var(--serif); margin-top:.4rem">Obrigado. Perguntas?</p>
+  </div>
+</section>
+
+</div>
+
+<nav class="nav" aria-label="Navegação">
+  <button id="nav-pslide" title="Slide anterior" aria-label="Slide anterior">«</button>
+  <button id="nav-prev" title="Passo anterior" aria-label="Passo anterior">‹</button>
+  <button id="nav-count" class="count" title="Lista de slides" aria-haspopup="true" aria-expanded="false" aria-controls="nav-menu" aria-live="polite">1 / 15</button>
+  <button id="nav-next" title="Próximo passo" aria-label="Próximo passo">›</button>
+  <button id="nav-nslide" title="Próximo slide" aria-label="Próximo slide">»</button>
+  <ol id="nav-menu" class="nav-menu" aria-label="Slides" hidden></ol>
+</nav>
+
+<script>
+(() => {
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const redrawers = [];
+  const redrawAll = () => redrawers.forEach(f => f());
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redrawAll);
+  new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  const $ = id => document.getElementById(id);
+  // WebKit maps a one-letter <mi> to a Mathematical Italic code point, which the text serif does not have,
+  // so the formula fell back to another, wider font. mathvariant="normal" keeps the serif and CSS sets the italic.
+  document.querySelectorAll("math mi:not([mathvariant])").forEach(mi => mi.setAttribute("mathvariant", "normal"));
+  // A block formula wider than its column is scaled down until it fits, whatever font the engine picked.
+  const fitMath = root => root.querySelectorAll('math[display="block"]').forEach(m => {
+    m.style.fontSize = "";
+    const r = [...m.children].map(k => k.getBoundingClientRect()).filter(q => q.width);
+    if (!r.length) return;
+    const w = Math.max(...r.map(q => q.right)) - Math.min(...r.map(q => q.left));
+    const cs = getComputedStyle(m.parentElement);
+    const avail = m.parentElement.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (avail > 0 && w > avail) m.style.fontSize = (1.12 * avail / w * 0.97).toFixed(3) + "em";
+  });
+  // Portuguese number format: decimal comma and a real minus sign.
+  const dec = (v, d) => (v < 0 ? "−" : "") + Math.abs(v).toFixed(d).replace(".", ",");
+
+  // A canvas keeps a fixed logical coordinate system (its width/height attributes)
+  // and redraws sharply at whatever size the slide gives it.
+  function canvasBox(c, draw) {
+    const w = c.width, h = c.height, ctx = c.getContext("2d");
+    c.style.aspectRatio = `${w} / ${h}`;
+    const box = { c, w, h, ctx };
+    const fit = () => {
+      const cw = c.clientWidth;
+      if (!cw) return false;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const bw = Math.round(cw * dpr), bh = Math.round(cw * h / w * dpr);
+      if (c.width !== bw || c.height !== bh) { c.width = bw; c.height = bh; }
+      ctx.setTransform(bw / w, 0, 0, bh / h, 0, 0);
+      return true;
+    };
+    box.redraw = () => { if (fit()) draw(); };
+    new ResizeObserver(box.redraw).observe(c);
+    redrawers.push(box.redraw);
+    return box;
+  }
+  const toCanvas = (box, e) => {
+    const r = box.c.getBoundingClientRect();
+    return [(e.clientX - r.left) * box.w / r.width, (e.clientY - r.top) * box.h / r.height];
+  };
+
+  // ---------------- Part 1: gradient descent fits a line ----------------
+  {
+    // Eight apartments: size in m², price in R$ thousands (made up, roughly linear with noise).
+    const SIZE = [42, 55, 63, 70, 82, 95, 108, 118];
+    const PRICE = [300, 352, 430, 441, 540, 578, 690, 705];
+    // Internally: s = (size − 60)/50 and y = price/100, so the model is y ≈ a + b·s.
+    const s = SIZE.map(v => (v - 60) / 50), y = PRICE.map(v => v / 100), N = s.length;
+    const mean = arr => arr.reduce((p, q) => p + q, 0) / arr.length;
+    const m1 = mean(s), m2 = mean(s.map(v => v * v)), my = mean(y), msy = mean(s.map((v, i) => v * y[i]));
+    const E = (a, b) => mean(s.map((v, i) => (a + b * v - y[i]) ** 2));
+    const grad = (a, b) => {
+      let ga = 0, gb = 0;
+      for (let i = 0; i < N; i++) { const r = a + b * s[i] - y[i]; ga += 2 * r / N; gb += 2 * r * s[i] / N; }
+      return [ga, gb];
+    };
+    // Exact optimum and stability threshold. E − E* = d·M·d with M = [[1, m1], [m1, m2]];
+    // gradient descent is stable iff η < 2/(2·largest root of M).
+    const det = m2 - m1 * m1, bStar = (msy - m1 * my) / det, aStar = my - bStar * m1;
+    const tr = 1 + m2, disc = Math.sqrt(tr * tr / 4 - det);
+    const mu = [tr / 2 + disc, tr / 2 - disc];
+    const vec = mu.map(m => { const v = [m1, m - 1], n = Math.hypot(v[0], v[1]); return [v[0] / n, v[1] / n]; });
+    const etaMax = 1 / mu[0], etaZig = 1 / (2 * mu[0]);
+    const S = 52;
+    const clampPx = v => Math.max(-5000, Math.min(5000, v));
+
+    function drawScatter(box, a, b, bad, f) {
+      const { ctx: g, w: W, h: H } = box;
+      const pad = { l: 3.4 * f, r: 10, t: 10, b: 2.5 * f };
+      const xr = [30, 130], yr = [0, 800];
+      const X = v => pad.l + (v - xr[0]) / (xr[1] - xr[0]) * (W - pad.l - pad.r);
+      const Y = v => H - pad.b - (v - yr[0]) / (yr[1] - yr[0]) * (H - pad.t - pad.b);
+      g.fillStyle = css("--surface"); g.fillRect(0, 0, W, H);
+      g.font = `${f}px ${css("--mono")}`; g.fillStyle = css("--muted"); g.strokeStyle = css("--rule"); g.lineWidth = 1;
+      g.textAlign = "center";
+      for (const v of [40, 80, 120]) { g.beginPath(); g.moveTo(X(v), Y(yr[0])); g.lineTo(X(v), Y(yr[1])); g.stroke(); g.fillText(v, X(v), H - pad.b + 1.15 * f); }
+      g.fillText("tamanho (m²)", (pad.l + W - pad.r) / 2, H - 4);
+      g.textAlign = "right";
+      for (const v of [0, 200, 400, 600, 800]) { g.beginPath(); g.moveTo(X(xr[0]), Y(v)); g.lineTo(X(xr[1]), Y(v)); g.stroke(); g.fillText(v, pad.l - 5, Y(v) + f / 3); }
+      g.save(); g.translate(f * 0.9, (pad.t + H - pad.b) / 2); g.rotate(-Math.PI / 2); g.textAlign = "center"; g.fillText("preço (R$ mil)", 0, 0); g.restore();
+      g.save(); g.beginPath(); g.rect(pad.l, pad.t, W - pad.l - pad.r, H - pad.t - pad.b); g.clip();
+      const line = size => 100 * (a + b * (size - 60) / 50);
+      if (isFinite(a) && isFinite(b)) {
+        g.strokeStyle = bad ? css("--orange") : css("--blue"); g.lineWidth = 2.5; g.beginPath();
+        g.moveTo(X(xr[0]), clampPx(Y(line(xr[0])))); g.lineTo(X(xr[1]), clampPx(Y(line(xr[1])))); g.stroke();
+      }
+      g.restore();
+      g.fillStyle = css("--ink");
+      SIZE.forEach((v, i) => { g.beginPath(); g.arc(X(v), Y(PRICE[i]), f * 0.3, 0, 2 * Math.PI); g.fill(); });
+    }
+
+    // Level curves: E is quadratic, so each level set is an exact ellipse.
+    function drawContours(box, f, axisNote = "") {
+      const { ctx, w, h } = box;
+      const P = ([a, b]) => [w / 2 + (a - aStar) * S, h / 2 - (b - bStar) * S];
+      ctx.fillStyle = css("--surface"); ctx.fillRect(0, 0, w, h);
+      // Muted ink at 70% opacity: about 3:1 against the surface in both themes, so the lines survive video compression.
+      ctx.strokeStyle = css("--muted"); ctx.globalAlpha = 0.7; ctx.lineWidth = 1.3;
+      for (const lv of [0.03, 0.12, 0.35, 0.8, 1.6, 3, 5, 8, 12, 18, 26]) {
+        ctx.beginPath();
+        for (let k = 0; k <= 72; k++) {
+          const th = k / 72 * 2 * Math.PI, r0 = Math.sqrt(lv / mu[0]) * Math.cos(th), r1 = Math.sqrt(lv / mu[1]) * Math.sin(th);
+          const [X, Y] = P([aStar + r0 * vec[0][0] + r1 * vec[1][0], bStar + r0 * vec[0][1] + r1 * vec[1][1]]);
+          k ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.font = `${f}px ${css("--mono")}`; ctx.fillStyle = css("--muted");
+      ctx.textAlign = "right"; ctx.fillText("a →" + axisNote, w - 8, h - 8);
+      ctx.textAlign = "left"; ctx.fillText("b ↑" + axisNote, 8, f + 4);
+      const [mx, my2] = P([aStar, bStar]);
+      ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(mx - 6, my2); ctx.lineTo(mx + 6, my2); ctx.moveTo(mx, my2 - 6); ctx.lineTo(mx, my2 + 6); ctx.stroke();
+      return P;
+    }
+
+    // Slide 3: the data and the regression line.
+    const s3 = canvasBox($("s3"), () => drawScatter(s3, aStar, bStar, false, 17));
+    // Slide 4: the valley, no controls.
+    const s4 = canvasBox($("s4"), () => {
+      drawContours(s4, 20);
+      const { ctx, w, h } = s4;
+      ctx.fillStyle = css("--ink"); ctx.font = `600 22px ${css("--sans")}`; ctx.textAlign = "left";
+      ctx.fillText("mínimo de E = melhor reta", w / 2 + 12, h / 2 - 12);
+    });
+
+    // Slide 6: live demo.
+    const eR = $("gd-eta");
+    let start = [1.5, 4.3], path = [start], timer = null;
+    $("gd-th").textContent = `Acima de η ≈ ${dec(etaMax, 2)} os passos crescem.`;
+    const stop = () => { if (timer) clearTimeout(timer), timer = null; };
+    const blown = () => { const [a, b] = path[path.length - 1]; return !isFinite(a) || !isFinite(b) || Math.abs(a) > 1e6 || Math.abs(b) > 1e6; };
+    // One gradient step. step() and the readout both use it, so the readout's result is the next state.
+    const update = (a, b, eta) => { const [ga, gb] = grad(a, b); return [ga, gb, a - eta * ga, b - eta * gb]; };
+    function step() {
+      if (blown() || path.length > 500) return false;
+      const [a, b] = path[path.length - 1], [, , na, nb] = update(a, b, +eR.value);
+      path.push([na, nb]);
+      return true;
+    }
+    // At most 6 characters: 3 decimals below 10, fewer as the value grows, "enorme" from 100 000 as for E.
+    const fit6 = v => {
+      const m = Math.abs(v);
+      if (!isFinite(v) || m >= 1e5) return "enorme";
+      const t = m.toFixed(m < 10 ? 3 : m < 100 ? 2 : m < 1000 ? 1 : 0);
+      return (v < 0 && +t !== 0 ? "−" : "") + t.replace(".", ",");
+    };
+
+    let gc, gs;
+    function draw() {
+      const eta = +eR.value;
+      $("gd-eta-o").textContent = dec(eta, 2);
+      const bad = eta >= etaMax, zig = eta > etaZig;
+      const P = drawContours(gc, 15, " (escala da demo)");
+      const ctx = gc.ctx;
+      const col = bad ? css("--orange") : css("--blue");
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+      path.forEach((p, i) => { const [X, Y] = P(p).map(clampPx); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+      ctx.stroke();
+      path.forEach((p, i) => { if (!i) return; const [X, Y] = P(p).map(clampPx); ctx.beginPath(); ctx.arc(X, Y, 3, 0, 2 * Math.PI); ctx.fill(); });
+      const [sx, sy] = P(path[0]);
+      ctx.lineWidth = 2.5; ctx.fillStyle = css("--surface"); ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+
+      const [a, b] = path[path.length - 1];
+      drawScatter(gs, a, b, bad, 13);
+      $("gd-k").textContent = path.length - 1;
+      const e = E(a, b);
+      $("gd-e").textContent = !isFinite(e) || e >= 1e5 ? "enorme" : dec(e, e < 1 ? 4 : 2);
+      const [ga, gb, na, nb] = update(a, b, eta);
+      $("gd-a0").textContent = fit6(a); $("gd-ga").textContent = `(${fit6(ga)})`; $("gd-a1").textContent = fit6(na);
+      $("gd-b0").textContent = fit6(b); $("gd-gb").textContent = `(${fit6(gb)})`; $("gd-b1").textContent = fit6(nb);
+      $("gd-ea").textContent = $("gd-eb").textContent = dec(eta, 2);
+      const v = $("gd-v");
+      v.className = "verdict " + (bad ? "no" : zig ? "warn" : "ok");
+      v.textContent = bad ? "Instável: passo grande demais" : zig ? "Aprendendo em zigue-zague" : "Aprendendo";
+    }
+    gc = canvasBox($("gd-c"), draw);
+    gs = canvasBox($("gd-s"), draw);
+    const reset = () => { stop(); path = [start.slice()]; draw(); };
+
+    function run() {
+      stop();
+      let k = 0;
+      if (reduced) { while (k++ < 30 && step()); draw(); return; }
+      const tick = () => { const moved = step(); draw(); k++; timer = moved && k < 30 ? setTimeout(tick, 150) : null; };
+      tick();
+    }
+    let dragging = false;
+    const c = gc.c;
+    const move = e => { const [X, Y] = toCanvas(gc, e); start = [aStar + (X - gc.w / 2) / S, bStar - (Y - gc.h / 2) / S]; reset(); };
+    c.addEventListener("pointerdown", e => { dragging = true; c.setPointerCapture(e.pointerId); move(e); });
+    c.addEventListener("pointermove", e => dragging && move(e));
+    c.addEventListener("pointerup", () => dragging = false);
+    c.addEventListener("pointercancel", () => dragging = false);
+    eR.addEventListener("input", reset);
+    $("gd-step").addEventListener("click", () => { stop(); step(); draw(); });
+    $("gd-run").addEventListener("click", run);
+    $("gd-reset").addEventListener("click", reset);
+  }
+
+  // ---------------- Slide 8: w_t for three step sizes ----------------
+  {
+    const box = canvasBox($("s8"), () => {
+      const { ctx: g, w: W, h: H } = box, f = 17;
+      // Eight steps keep every point of the η = 1,1 curve inside the plot: it reaches 13,75 at t = 7 and −9,90 at t = 8.
+      const T = 8, pad = { l: 44, r: 14, t: 84, b: 38 };
+      const tr = [0, T], yr = [-11, 15];
+      const X = t => pad.l + (t - tr[0]) / (tr[1] - tr[0]) * (W - pad.l - pad.r);
+      const Y = v => H - pad.b - (v - yr[0]) / (yr[1] - yr[0]) * (H - pad.t - pad.b);
+      g.fillStyle = css("--surface"); g.fillRect(0, 0, W, H);
+      g.font = `${f}px ${css("--mono")}`; g.lineWidth = 1; g.strokeStyle = css("--rule"); g.fillStyle = css("--muted");
+      g.textAlign = "right";
+      for (const v of [-6, 0, 6, 12]) { g.beginPath(); g.moveTo(X(0), Y(v)); g.lineTo(X(T), Y(v)); g.stroke(); g.fillText(dec(v, 0), pad.l - 6, Y(v) + 5); }
+      g.textAlign = "center";
+      for (let t = 0; t <= T; t += 2) g.fillText(t, X(t), H - pad.b + 18);
+      g.textAlign = "right"; g.fillText("t", W - pad.r, H - 4);
+      // Vertical axis label w_t.
+      g.textAlign = "left"; g.fillStyle = css("--ink"); g.font = `italic ${f}px ${css("--serif")}`;
+      g.fillText("w", 8, pad.t - 4); g.font = `italic ${0.7 * f}px ${css("--serif")}`; g.fillText("t", 8 + 0.75 * f, pad.t);
+      g.font = `${f}px ${css("--mono")}`; g.fillStyle = css("--muted");
+      // Target line w* = 3.
+      g.strokeStyle = css("--ink"); g.setLineDash([3, 4]); g.beginPath(); g.moveTo(X(0), Y(3)); g.lineTo(X(T), Y(3)); g.stroke(); g.setLineDash([]);
+      const series = [
+        [0.3, css("--blue"), [], "η = 0,3"],
+        [0.8, css("--blue"), [7, 4], "η = 0,8"],
+        [1.1, css("--orange"), [], "η = 1,1"],
+      ];
+      g.save(); g.beginPath(); g.rect(pad.l, pad.t - 8, W - pad.l - pad.r, H - pad.t - pad.b + 16); g.clip();
+      for (const [eta, col, dash] of series) {
+        const a = 1 - 2 * eta, pts = [];
+        for (let t = 0; t <= T; t++) pts.push([X(t), Y(3 + a ** t * (0 - 3))].map(v => Math.max(-1e4, Math.min(1e4, v))));
+        g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2.2; g.setLineDash(dash);
+        g.beginPath(); pts.forEach(([px, py], i) => i ? g.lineTo(px, py) : g.moveTo(px, py)); g.stroke(); g.setLineDash([]);
+        pts.forEach(([px, py]) => { g.beginPath(); g.arc(px, py, 2.8, 0, 2 * Math.PI); g.fill(); });
+      }
+      g.restore();
+      // Legend above the plot.
+      g.textAlign = "left"; g.font = `${f}px ${css("--serif")}`;
+      const legend = [...series.map(([, col, dash, label]) => [col, dash, label]), [css("--ink"), [3, 4], "alvo w* = 3"]];
+      legend.forEach(([col, dash, label], i) => {
+        const lx = 20 + (i % 2) * 200, ly = 24 + Math.floor(i / 2) * 30;
+        g.strokeStyle = col; g.lineWidth = 2.2; g.setLineDash(dash);
+        g.beginPath(); g.moveTo(lx, ly); g.lineTo(lx + 30, ly); g.stroke(); g.setLineDash([]);
+        g.fillStyle = css("--ink"); g.fillText(label, lx + 38, ly + 6);
+      });
+    });
+  }
+
+  // ---------------- Slides 10 and 11: scores and softmax ----------------
+  {
+    const words = [["Brasília", 4.0], ["Rio", 2.2], ["São Paulo", 1.6], ["a", 1.0], ["linda", 0.3]];
+    const ex = words.map(([, z]) => Math.exp(z)), sum = ex.reduce((p, q) => p + q, 0);
+    const p = ex.map(v => v / sum);
+    const row = (el, label, zTxt, frac, vTxt, cls) => {
+      const w = document.createElement("span"); w.className = "w"; w.textContent = label;
+      const z = document.createElement("span"); z.className = "z"; z.textContent = zTxt;
+      const t = document.createElement("span"); t.className = "track" + (cls ? " " + cls : "");
+      const f = document.createElement("span"); f.style.width = (frac * 100).toFixed(1) + "%"; t.append(f);
+      const v = document.createElement("span"); v.className = "v"; v.textContent = vTxt;
+      el.append(w, z, t, v);
+    };
+    const s10 = $("s10"), s11 = $("s11");
+    words.forEach(([wd, z]) => row(s10, wd, "", z / 4.0, "z = " + dec(z, 1), "score"));
+    words.forEach(([wd, z], i) => row(s11, wd, "z = " + dec(z, 1), p[i], "p = " + dec(p[i], 2)));
+  }
+
+  // ---------------- Slide 12: bigram next-word machine ----------------
+  {
+    const ta = $("ng-text"), sel = $("ng-start"), tR = $("ng-temp");
+    const sentenceEl = $("ng-sentence"), barsEl = $("ng-bars"), capEl = $("ng-cap");
+    let counts = new Map(), starts = [], words = [], timer = null;
+
+    function build() {
+      // NFC keeps accented letters as single characters, so "cálculo" is one word even if pasted decomposed.
+      const toks = (ta.value.normalize("NFC").toLocaleLowerCase("pt-BR").replace(/[!?;:]/g, ".").match(/[\p{L}\p{M}\p{N}'’-]+|\./gu) || [])
+        .filter((tk, i, arr) => !(tk === "." && (i === 0 || arr[i - 1] === ".")));
+      counts = new Map(); starts = [];
+      toks.forEach((tk, i) => {
+        if (tk !== "." && (i === 0 || toks[i - 1] === ".")) starts.push(tk);
+        if (i + 1 < toks.length) {
+          if (!counts.has(tk)) counts.set(tk, new Map());
+          const m = counts.get(tk); m.set(toks[i + 1], (m.get(toks[i + 1]) || 0) + 1);
+        }
+      });
+      const vocab = [...new Set(toks.filter(tk => tk !== "."))].sort((p, q) => p.localeCompare(q, "pt-BR"));
+      const keep = sel.value;
+      sel.replaceChildren(...vocab.map(v => { const o = document.createElement("option"); o.value = o.textContent = v; return o; }));
+      sel.value = vocab.includes(keep) ? keep : vocab.includes("os") ? "os" : (starts[0] || vocab[0] || "");
+    }
+    function probs(word) {
+      const m = counts.get(word);
+      if (!m || !m.size) return [];
+      const T = +tR.value;
+      // z = log count, p ∝ e^{z/T} = count^{1/T}; subtract the max score for numerical safety.
+      const z = [...m].map(([nx, ct]) => [nx, Math.log(ct)]);
+      const zmax = Math.max(...z.map(q => q[1]));
+      const ex = z.map(([nx, zi]) => [nx, Math.exp((zi - zmax) / T)]);
+      const sum = ex.reduce((acc, q) => acc + q[1], 0);
+      // Each entry: [word, p, z, e^{z/T}]. The last two are only displayed; e^{z/T} = count^{1/T} stays small here.
+      return ex.map(([nx, e], i) => [nx, e / sum, z[i][1], Math.exp(z[i][1] / T)]).sort((p, q) => q[1] - p[1] || p[0].localeCompare(q[0], "pt-BR"));
+    }
+    // Up to 5 characters: 2 decimals below 10, then fewer.
+    const fit5 = v => dec(v, v < 10 ? 2 : v < 100 ? 1 : 0);
+    let held = null, restWords = new Set();   // pending bar update while the drawn row is marked; words in the "outras" row
+    const randStart = () => starts.length ? starts[Math.floor(Math.random() * starts.length)] : sel.value;
+    // hold > 0: the bars keep the distribution the word was drawn from for hold ms, with the drawn row marked.
+    function next(hold = 0) {
+      if (!words.length) return;
+      if (held) render();
+      const p = probs(words[words.length - 1]);
+      let pick;
+      if (!p.length) { if (words[words.length - 1] !== ".") words.push("."); pick = randStart(); }
+      else {
+        let r = Math.random(); pick = p[p.length - 1][0];
+        for (const [nx, pi] of p) { if ((r -= pi) <= 0) { pick = nx; break; } }
+      }
+      if (pick) words.push(pick);
+      if (words.length > 80) words = words.slice(-60);
+      const key = restWords.has(pick) ? "\0rest" : pick;
+      const won = p.length && hold > 0 && [...barsEl.querySelectorAll(".bar-l")].find(l => l.dataset.w === key);
+      if (!won) { render(); return; }
+      renderText();
+      won.classList.add("won");
+      won.nextElementSibling.nextElementSibling.nextElementSibling.firstChild.classList.add("won");
+      held = setTimeout(render, hold);
+    }
+    function render() {
+      clearTimeout(held); held = null;
+      renderText(); renderBars();
+    }
+    function renderText() {
+      sentenceEl.replaceChildren();
+      if (!words.length) { sentenceEl.textContent = "Digite ou cole algumas frases no texto de treinamento."; return; }
+      let capNext = true;
+      words.forEach((wd, i) => {
+        let txt = wd === "." ? "." : (i ? " " : "") + (capNext ? wd.charAt(0).toLocaleUpperCase("pt-BR") + wd.slice(1) : wd);
+        capNext = wd === ".";
+        if (i === words.length - 1) {
+          if (txt.startsWith(" ")) { sentenceEl.append(" "); txt = txt.slice(1); }
+          const sp = document.createElement("span"); sp.className = "new"; sp.textContent = txt; sentenceEl.append(sp);
+        } else sentenceEl.append(txt);
+      });
+      sentenceEl.scrollTop = sentenceEl.scrollHeight;
+    }
+    const cell = (cls, txt, html) => { const c = document.createElement("span"); c.className = cls; if (html) c.innerHTML = html; else c.textContent = txt; return c; };
+    function renderBars() {
+      if (!words.length) { barsEl.replaceChildren(); capEl.textContent = ""; return; }
+      const cur = words[words.length - 1];
+      // At most six rows: with more candidates, the top five and one row "outras" that adds up the rest.
+      const all = probs(cur), rest = all.length > 6 ? all.slice(5) : [];
+      const rows = rest.length ? [...all.slice(0, 5), ["\0rest", rest.reduce((s, q) => s + q[1], 0), null, rest.reduce((s, q) => s + q[3], 0)]] : all;
+      restWords = new Set(rest.map(q => q[0]));
+      // Whole percentages by largest remainder over the displayed rows, so the shown percentages add up to 100%.
+      // Ties go to the more probable word (probs() is sorted), so 87,5% and 12,5% show as 88% and 12%.
+      const raw = rows.map(([, pi]) => pi * 100), pct = raw.map(Math.floor);
+      raw.map((v, i) => [v - pct[i], i]).sort((u, v) => (v[0] - u[0] > 1e-9 ? 1 : u[0] - v[0] > 1e-9 ? -1 : u[1] - v[1]))
+        .slice(0, rows.length ? 100 - pct.reduce((s, v) => s + v, 0) : 0).forEach(([, i]) => pct[i]++);
+      const label = nx => nx === "\0rest" ? `outras (${rest.length})` : nx === "." ? ". (fim)" : nx;
+      capEl.textContent = rows.length ? `Depois de “${cur}”, a próxima palavra é…` : `Nada vem depois de “${cur}”, então a máquina começa uma frase nova.`;
+      barsEl.setAttribute("aria-label", "Probabilidades da próxima palavra: " + rows.map(([nx], i) => `${label(nx)} ${pct[i]}%`).join(", "));
+      if (!rows.length) { barsEl.replaceChildren(); return; }
+      // Columns: word, z = ln count, e^{z/T}, bar, p. The last row is the sum that divides every e^{z/T}.
+      const head = [cell("bar-h", ""), cell("bar-h", "", "<i>z</i>"), cell("bar-h", "", "<i>e</i><sup><i>z</i>/<i>T</i></sup>"), cell("bar-h", ""), cell("bar-h", "", "<i>p</i>")];
+      const sum = all.reduce((s, q) => s + q[3], 0);
+      const foot = [cell("bar-s", "soma"), cell("bar-s", ""), cell("bar-n bar-s", fit5(sum)), cell("bar-s", ""), cell("bar-v bar-s", "100%")];
+      barsEl.replaceChildren(...head, ...rows.flatMap(([nx, pi, zi, ei], i) => {
+        const l = cell("bar-l", ""); l.dataset.w = nx; l.append(cell("", label(nx))); l.title = l.textContent;
+        const t = cell("bar-t", "");
+        const f = cell("bar-f", ""); f.style.width = (pi * 100).toFixed(1) + "%"; t.append(f);
+        return [l, cell("bar-n", zi === null ? "" : dec(zi, 2)), cell("bar-n", fit5(ei)), t, cell("bar-v", pct[i] + "%")];
+      }), ...foot);
+    }
+    const stop = () => { if (timer) clearTimeout(timer), timer = null; };
+    const restart = () => { stop(); words = sel.value ? [sel.value] : []; render(); };
+    function write() {
+      stop();
+      let k = 0;
+      if (reduced) { for (; k < 15; k++) next(); return; }
+      const tick = () => { next(200); k++; timer = k < 15 ? setTimeout(tick, 350) : null; };
+      tick();
+    }
+    let deb = null;
+    ta.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(() => { build(); restart(); }, 300); });
+    sel.addEventListener("change", restart);
+    tR.addEventListener("input", () => { $("ng-temp-o").textContent = dec(+tR.value, 1); render(); });
+    $("ng-next").addEventListener("click", () => { stop(); next(600); });
+    $("ng-write").addEventListener("click", write);
+    $("ng-restart").addEventListener("click", restart);
+    build(); restart();
+  }
+
+  // ---------------- Slide 14: flow matching, exact velocity for a finite point set ----------------
+  {
+    const S = 70;                       // pixels per unit
+    const M = 900;                      // data points and particles
+    const arrowsBox = $("flow-arrows");
+    let data = null, x = null, t = 0, anim = null, gauss = null;
+
+    function randn() {
+      let u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+    function sampleText(text) {
+      const off = document.createElement("canvas");
+      off.width = 900; off.height = 260;
+      const o = off.getContext("2d", { willReadFrequently: true });
+      o.fillStyle = "#000"; o.textAlign = "center"; o.textBaseline = "middle";
+      let size = 200;
+      o.font = `700 ${size}px "IBM Plex Sans", Arial, sans-serif`;
+      const tw = o.measureText(text).width;
+      if (tw > 860) { size = Math.floor(size * 860 / tw); o.font = `700 ${size}px "IBM Plex Sans", Arial, sans-serif`; }
+      o.fillText(text || "IA", 450, 135);
+      const px = o.getImageData(0, 0, 900, 260).data;
+      const inside = [];
+      for (let yy = 0; yy < 260; yy += 2) for (let xx = 0; xx < 900; xx += 2)
+        if (px[(yy * 900 + xx) * 4 + 3] > 128) inside.push([xx, yy]);
+      if (!inside.length) return null;
+      let minx = 1e9, maxx = -1e9, cy = 0, cx = 0;
+      inside.forEach(([a]) => { minx = Math.min(minx, a); maxx = Math.max(maxx, a); });
+      const scale = Math.min(8.0 / (maxx - minx), 0.03);
+      const pts = new Float64Array(2 * M);
+      for (let i = 0; i < M; i++) {
+        const [a, b] = inside[Math.floor(Math.random() * inside.length)];
+        pts[2 * i] = (a + Math.random() * 2) * scale; pts[2 * i + 1] = -(b + Math.random() * 2) * scale;
+        cx += pts[2 * i]; cy += pts[2 * i + 1];
+      }
+      cx /= M; cy /= M;
+      for (let i = 0; i < M; i++) { pts[2 * i] -= cx; pts[2 * i + 1] -= cy; }
+      return pts;
+    }
+    function newNoise() {
+      gauss = new Float64Array(2 * M);
+      for (let i = 0; i < 2 * M; i++) gauss[i] = randn();
+    }
+    function reset() {
+      if (anim) clearTimeout(anim), anim = null;
+      x = Float64Array.from(gauss); t = 0; draw();
+    }
+    function step(hh) {
+      const s = 1 - t, inv = 1 / (2 * s * s);
+      const nx = new Float64Array(2 * M), logw = new Float64Array(M);
+      for (let p = 0; p < M; p++) {
+        const px = x[2 * p], py = x[2 * p + 1];
+        let mx = -Infinity;
+        for (let i = 0; i < M; i++) {
+          const dx = px - t * data[2 * i], dy = py - t * data[2 * i + 1];
+          const l = -(dx * dx + dy * dy) * inv; logw[i] = l; if (l > mx) mx = l;
+        }
+        let sw = 0, ex = 0, ey = 0;
+        for (let i = 0; i < M; i++) {
+          const wgt = Math.exp(logw[i] - mx); sw += wgt; ex += wgt * data[2 * i]; ey += wgt * data[2 * i + 1];
+        }
+        ex /= sw; ey /= sw;
+        nx[2 * p] = px + hh * (ex - px) / s;
+        nx[2 * p + 1] = py + hh * (ey - py) / s;
+      }
+      x = nx; t = Math.min(1, t + hh);
+    }
+    // Same velocity as in step(), evaluated at one point (for the arrow display only).
+    const logw1 = new Float64Array(M);
+    function velocity(px, py, tt) {
+      const s = 1 - tt, inv = 1 / (2 * s * s);
+      let mx = -Infinity;
+      for (let i = 0; i < M; i++) {
+        const dx = px - tt * data[2 * i], dy = py - tt * data[2 * i + 1];
+        const l = -(dx * dx + dy * dy) * inv; logw1[i] = l; if (l > mx) mx = l;
+      }
+      let sw = 0, ex = 0, ey = 0;
+      for (let i = 0; i < M; i++) {
+        const wgt = Math.exp(logw1[i] - mx); sw += wgt; ex += wgt * data[2 * i]; ey += wgt * data[2 * i + 1];
+      }
+      return [(ex / sw - px) / s, (ey / sw - py) / s];
+    }
+    let box;
+    function drawArrows() {
+      const { ctx, w, h } = box;
+      // The field is undefined at t = 1, so the display uses t ≤ 0.97 there.
+      const tt = Math.min(t, 0.97), GX = 18, GY = 11, cw = w / GX, ch = h / GY;
+      const cap = 0.42 * Math.min(cw, ch), k = 7;
+      ctx.strokeStyle = css("--muted"); ctx.globalAlpha = 0.5; ctx.lineWidth = 1.2;
+      for (let gy = 0; gy < GY; gy++) for (let gx = 0; gx < GX; gx++) {
+        const X = (gx + 0.5) * cw, Y = (gy + 0.5) * ch;
+        const [vx, vy] = velocity((X - w / 2) / S, -(Y - h / 2) / S, tt);
+        const sp = Math.hypot(vx, vy);
+        if (sp < 1e-9) continue;
+        const len = Math.min(cap, sp * k), ux = vx / sp, uy = -vy / sp;
+        const ex = X + ux * len, ey = Y + uy * len, hd = Math.min(4, len * 0.45);
+        ctx.beginPath();
+        ctx.moveTo(X, Y); ctx.lineTo(ex, ey);
+        ctx.moveTo(ex - hd * (ux - 0.6 * uy), ey - hd * (uy + 0.6 * ux)); ctx.lineTo(ex, ey);
+        ctx.lineTo(ex - hd * (ux + 0.6 * uy), ey - hd * (uy - 0.6 * ux));
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    function draw() {
+      const { ctx, w, h } = box;
+      ctx.fillStyle = css("--surface"); ctx.fillRect(0, 0, w, h);
+      if (!x) return;
+      // The field is undefined at t = 1, so the arrows are hidden once the points arrive.
+      if (arrowsBox.checked && data && t < 0.999) drawArrows();
+      ctx.fillStyle = t >= 0.999 ? css("--blue") : css("--orange");
+      ctx.globalAlpha = 0.85;
+      for (let p = 0; p < M; p++) {
+        ctx.fillRect(w / 2 + x[2 * p] * S - 1.3, h / 2 - x[2 * p + 1] * S - 1.3, 2.6, 2.6);
+      }
+      ctx.globalAlpha = 1;
+      $("flow-t").textContent = dec(t, 2);
+    }
+    box = canvasBox($("flow-c"), draw);
+    function run() {
+      const txt = $("flow-text").value.trim() || "IA";
+      data = sampleText(txt);
+      if (!data) return;
+      reset();
+      const n = +$("flow-steps").value, hh = 1 / n;
+      let k = 0;
+      // Pace the run so each Euler step is visible on a video call: about 4 s in total,
+      // at most 0,7 s per step when there are few steps.
+      const wait = Math.min(700, Math.max(16, 4000 / n));
+      const tick = () => {
+        step(hh); k++; draw();
+        anim = k < n ? setTimeout(tick, wait) : null;
+      };
+      if (reduced) { for (; k < n; k++) step(hh); draw(); }
+      else anim = setTimeout(tick, wait);
+    }
+    const stepsR = $("flow-steps");
+    stepsR.addEventListener("input", () => $("flow-steps-o").textContent = stepsR.value);
+    $("flow-run").addEventListener("click", run);
+    $("flow-reset").addEventListener("click", () => { newNoise(); reset(); });
+    $("flow-text").addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+    arrowsBox.addEventListener("change", draw);
+    $("flow-n").textContent = M;
+    newNoise();
+    x = Float64Array.from(gauss); draw();
+    // Resting state: show a finished generation so the first look already says what it does.
+    document.fonts.ready.then(() => {
+      data = sampleText($("flow-text").value);
+      reset();
+      const n = 60; for (let k = 0; k < n; k++) step(1 / n);
+      draw();
+    });
+  }
+
+  // ---------------- Deck navigation ----------------
+  {
+    const slides = [...document.querySelectorAll(".slide")], last = slides.length - 1;
+    const maxStep = i => Math.max(0, ...[...slides[i].querySelectorAll("[data-step]")].map(e => +e.dataset.step));
+    const counter = $("nav-count"), prevB = $("nav-prev"), nextB = $("nav-next"), pslideB = $("nav-pslide"), nslideB = $("nav-nslide");
+    const menu = $("nav-menu");
+    // The slide list is built from the slide titles, so it follows any title change.
+    menu.replaceChildren(...slides.map((sl, i) => {
+      const li = document.createElement("li"), b = document.createElement("button");
+      b.textContent = `${i + 1} · ${sl.querySelector("h1, h2").textContent.trim()}`;
+      b.addEventListener("click", () => { closeMenu(); show(i, maxStep(i)); });
+      li.append(b); return li;
+    }));
+    const items = [...menu.querySelectorAll("button")];
+    const isOpen = () => !menu.hidden;
+    function openMenu() {
+      menu.hidden = false; counter.setAttribute("aria-expanded", "true");
+      items.forEach((b, i) => b.setAttribute("aria-current", i === cur ? "true" : "false"));
+      items[cur].focus(); items[cur].scrollIntoView({ block: "nearest" });
+    }
+    function closeMenu() { if (!isOpen()) return; menu.hidden = true; counter.setAttribute("aria-expanded", "false"); }
+    let cur = -1, k = 0;
+    function show(i, st) {
+      i = Math.max(0, Math.min(last, i));
+      if (i !== cur && cur >= 0) {
+        const old = slides[cur];
+        if (old.contains(document.activeElement)) document.activeElement.blur();
+        old.classList.remove("active");
+      }
+      cur = i; k = Math.max(0, Math.min(maxStep(i), st));
+      slides[i].classList.add("active");
+      fitMath(slides[i]);
+      slides[i].querySelectorAll("[data-step]").forEach(e => e.classList.toggle("on", +e.dataset.step <= k));
+      counter.textContent = `${i + 1} / ${slides.length}`;
+      prevB.disabled = i === 0 && k === 0;
+      nextB.disabled = i === last && k === maxStep(i);
+      pslideB.disabled = i === 0;
+      nslideB.disabled = i === last;
+      try { if (location.hash !== "#" + (i + 1)) history.replaceState(null, "", "#" + (i + 1)); } catch (_) {}
+    }
+    const next = () => k < maxStep(cur) ? show(cur, k + 1) : cur < last && show(cur + 1, 0);
+    const prev = () => k > 0 ? show(cur, k - 1) : cur > 0 && show(cur - 1, maxStep(cur - 1));
+    // Whole slides: land with every step shown.
+    const nextSlide = () => cur < last && show(cur + 1, maxStep(cur + 1));
+    const prevSlide = () => cur > 0 && show(cur - 1, maxStep(cur - 1));
+    const fromHash = () => { const m = /^#(\d+)$/.exec(location.hash); return m ? +m[1] - 1 : null; };
+    function fullscreen() {
+      try {
+        const d = document;
+        const p = d.fullscreenElement ? d.exitFullscreen() : d.documentElement.requestFullscreen && d.documentElement.requestFullscreen();
+        if (p && p.catch) p.catch(() => {});
+      } catch (_) {}
+    }
+    document.addEventListener("keydown", e => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target, tag = t.tagName;
+      const field = tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable ||
+        (tag === "INPUT" && t.type !== "checkbox" && t.type !== "button");
+      if (e.key === "Escape" && field) { t.blur(); return; }   // leave a slider or text box, then keys navigate again
+      if (field) return;
+      if (isOpen()) {   // the slide list: arrows move in the list, Esc closes it, Enter and Space pick
+        const j = items.indexOf(document.activeElement);
+        if (e.key === "Escape") { closeMenu(); counter.focus(); }
+        else if (e.key === "ArrowDown") items[Math.min(items.length - 1, j + 1)].focus();
+        else if (e.key === "ArrowUp") items[Math.max(0, j - 1)].focus();
+        else if (e.key === "Home") items[0].focus();
+        else if (e.key === "End") items[items.length - 1].focus();
+        else return;
+        e.preventDefault(); return;
+      }
+      switch (e.key) {
+        case "ArrowRight": next(); break;
+        case " ": if (tag === "INPUT") return; next(); break;   // a focused checkbox keeps Space for itself
+        case "ArrowLeft": prev(); break;
+        case "ArrowDown": case "PageDown": nextSlide(); break;
+        case "ArrowUp": case "PageUp": prevSlide(); break;
+        case "Home": show(0, 0); break;
+        case "End": show(last, maxStep(last)); break;
+        case "f": case "F": fullscreen(); break;
+        default: return;
+      }
+      e.preventDefault();
+    });
+    prevB.addEventListener("click", prev);
+    nextB.addEventListener("click", next);
+    pslideB.addEventListener("click", prevSlide);
+    nslideB.addEventListener("click", nextSlide);
+    counter.addEventListener("click", () => isOpen() ? closeMenu() : openMenu());
+    // Click on the left or right edge of the slide. With the slide list open, a click outside only closes it.
+    document.addEventListener("click", e => {
+      if (isOpen()) { if (!e.target.closest(".nav")) closeMenu(); return; }
+      if (innerWidth <= 760) return;
+      if (e.target.closest("button, a, input, select, textarea, label, canvas, .demo, .nav")) return;
+      const sel = getSelection && getSelection();
+      if (sel && String(sel)) return;
+      if (e.clientX < innerWidth * 0.08) prev();
+      else if (e.clientX > innerWidth * 0.92) next();
+    });
+    window.addEventListener("resize", () => fitMath(slides[cur]));
+    document.fonts.ready.then(() => fitMath(slides[cur]));
+    window.addEventListener("hashchange", () => { const n = fromHash(); if (n !== null && n !== cur) show(n, 0); });
+    const n0 = fromHash();
+    show(n0 === null ? 0 : n0, 0);
+  }
+})();
+</script>
+
+</body></html>
